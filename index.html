@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Weather Command Center</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Poppins',sans-serif}
+
+body{
+min-height:100vh;
+display:flex;
+justify-content:center;
+align-items:center;
+padding:20px;
+overflow:hidden;
+transition:background 1s ease;
+}
+
+.day{background:radial-gradient(circle at top,#0ea5e9,#020617);}
+.night{background:radial-gradient(circle at top,#020617,#000);color:white}
+
+/* Earth */
+.earth{
+position:fixed;
+top:-150px;
+right:-150px;
+width:500px;
+height:500px;
+border-radius:50%;
+background:url("earth.png") center/cover;
+animation:spin 40s linear infinite;
+opacity:.25;
+z-index:0;
+}
+
+@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+
+/* Sun/Moon */
+.sunmoon{
+position:fixed;
+top:40px;
+left:40px;
+width:60px;
+height:60px;
+border-radius:50%;
+transition:1s;
+z-index:1;
+}
+
+.sun{background:radial-gradient(circle,#fde047,#f59e0b);}
+.moon{background:radial-gradient(circle,#e5e7eb,#9ca3af);}
+
+/* Clouds */
+.cloud{
+position:fixed;
+top:20%;
+width:300px;
+height:100px;
+background:rgba(255,255,255,0.15);
+border-radius:50px;
+filter:blur(8px);
+animation:cloudMove 60s linear infinite;
+z-index:0;
+}
+
+.cloud:nth-child(2){top:40%;animation-duration:90s}
+.cloud:nth-child(3){top:60%;animation-duration:120s}
+
+@keyframes cloudMove{
+from{transform:translateX(-400px)}
+to{transform:translateX(120vw)}
+}
+
+/* Radar */
+.radar{
+position:fixed;
+inset:0;
+background:radial-gradient(circle,rgba(0,255,255,0.05) 1px,transparent 1px);
+background-size:40px 40px;
+animation:radar 6s linear infinite;
+z-index:0;
+}
+
+@keyframes radar{
+from{background-position:0 0}
+to{background-position:40px 40px}
+}
+
+/* Rain */
+.rain{position:fixed;inset:0;pointer-events:none;z-index:1}
+.drop{
+position:absolute;
+width:2px;height:15px;
+background:rgba(255,255,255,.6);
+animation:rain .7s linear infinite;
+}
+@keyframes rain{to{transform:translateY(100vh)}}
+
+/* Glass card */
+.container{
+position:relative;
+z-index:2;
+background:rgba(255,255,255,0.08);
+backdrop-filter:blur(18px);
+border-radius:20px;
+padding:30px;
+max-width:700px;
+width:100%;
+text-align:center;
+color:white;
+box-shadow:0 10px 40px rgba(0,0,0,0.6);
+}
+
+input,button{
+width:100%;
+padding:14px;
+margin-top:10px;
+border-radius:10px;
+border:none;
+font-size:16px;
+}
+
+input{background:rgba(255,255,255,0.15);color:white}
+input:focus{background:rgba(255,255,255,0.25);box-shadow:0 0 10px #38bdf8}
+
+button{
+background:linear-gradient(45deg,#06b6d4,#6366f1);
+color:white;font-weight:bold;cursor:pointer;
+transition:.3s;
+}
+
+button:hover{
+transform:translateY(-2px);
+box-shadow:0 8px 20px rgba(6,182,212,.6);
+}
+
+.aqi{margin-top:15px;padding:10px;border-radius:8px;font-weight:bold}
+.good{background:#22c55e}
+.moderate{background:#facc15;color:black}
+.poor{background:#ef4444}
+
+.hourly{
+display:grid;
+grid-template-columns:repeat(auto-fill,minmax(70px,1fr));
+gap:8px;margin-top:15px;
+}
+
+.hour{background:rgba(255,255,255,0.12);padding:8px;border-radius:8px;font-size:12px}
+
+canvas{
+margin-top:20px;
+background:rgba(0,0,0,0.25);
+border-radius:10px;padding:8px;
+}
+
+.loading{margin-top:10px;opacity:.8}
+.error{color:#ff6b6b;margin-top:10px}
+
+/* === MOBILE OPTIMIZATION === */
+@media (max-width: 600px){
+
+.container{padding:18px;}
+
+h1{font-size:20px;}
+
+.hourly{grid-template-columns:repeat(3,1fr);}
+
+.hour{font-size:11px;padding:6px;}
+
+.earth{
+width:260px;
+height:260px;
+top:-80px;
+right:-80px;
+opacity:.15;
+}
+
+.sunmoon{
+width:40px;
+height:40px;
+top:15px;
+left:15px;
+}
+
+canvas{
+margin-top:12px;
+padding:4px;
+}
+}
+</style>
+</head>
+
+<body class="day">
+
+<div class="earth"></div>
+<div class="sunmoon sun" id="sunmoon"></div>
+<div class="cloud"></div><div class="cloud"></div><div class="cloud"></div>
+<div class="radar"></div>
+<div class="rain" id="rain"></div>
+
+<div class="container">
+<h1>🌍 Weather Command Center</h1>
+
+<input id="city" placeholder="Enter city">
+<button onclick="getData()">Fetch Data</button>
+
+<div id="loading" class="loading"></div>
+<div id="error" class="error"></div>
+
+<div id="summary"></div>
+<div id="aqiBox"></div>
+<div id="tip"></div>
+
+<div id="hourly" class="hourly"></div>
+<canvas id="chart"></canvas>
+</div>
+
+<script>
+let chart;
+
+function clearRain(){document.getElementById("rain").innerHTML=""}
+function createRain(){
+const r=document.getElementById("rain");
+for(let i=0;i<120;i++){
+const d=document.createElement("div");
+d.className="drop";
+d.style.left=Math.random()*100+"%";
+d.style.animationDuration=(0.5+Math.random())+"s";
+r.appendChild(d);
+}
+}
+
+function getAQI(a){
+if(a<=50)return{t:"Good",c:"good",tip:"Air quality is excellent."};
+if(a<=100)return{t:"Moderate",c:"moderate",tip:"Sensitive groups limit outdoor exertion."};
+return{t:"Poor",c:"poor",tip:"Avoid outdoor exposure."};
+}
+
+async function getData(){
+const city=document.getElementById("city").value;
+const load=document.getElementById("loading");
+const err=document.getElementById("error");
+load.innerHTML="Loading...";
+err.innerHTML="";
+clearRain();
+
+try{
+const geo=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${city}`);
+const g=await geo.json();
+if(!g.results) throw new Error();
+const {latitude,longitude,name,country}=g.results[0];
+
+const weather=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&hourly=temperature_2m,precipitation&daily=temperature_2m_max,sunrise,sunset&timezone=auto`);
+const w=await weather.json();
+
+const aqiRes=await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${latitude}&longitude=${longitude}&current=us_aqi`);
+const aqiData=await aqiRes.json();
+
+/* Day/Night */
+const now=new Date();
+const sunrise=new Date(w.daily.sunrise[0]);
+const sunset=new Date(w.daily.sunset[0]);
+const isDay=(now>sunrise && now<sunset);
+document.body.className=isDay?"day":"night";
+document.getElementById("sunmoon").className="sunmoon "+(isDay?"sun":"moon");
+
+/* Rain */
+if(w.hourly.precipitation.some(p=>p>0)) createRain();
+
+/* Summary */
+document.getElementById("summary").innerHTML=
+`Today in <b>${name}, ${country}</b>: <b>${w.hourly.temperature_2m[0]}°C</b>`;
+
+/* AQI */
+const info=getAQI(aqiData.current.us_aqi);
+document.getElementById("aqiBox").innerHTML=
+`<div class="aqi ${info.c}">AQI: ${aqiData.current.us_aqi} — ${info.t}</div>`;
+document.getElementById("tip").innerHTML=info.tip;
+
+/* Hourly */
+let h="";
+for(let i=0;i<12;i++){
+h+=`<div class="hour">${w.hourly.time[i].slice(11,16)}<br>${w.hourly.temperature_2m[i]}°C</div>`;
+}
+document.getElementById("hourly").innerHTML=h;
+
+/* Chart */
+if(chart) chart.destroy();
+chart=new Chart(document.getElementById("chart"),{
+type:"line",
+data:{
+labels:w.daily.time.slice(0,5),
+datasets:[{label:"5-Day Forecast °C",data:w.daily.temperature_2m_max.slice(0,5),borderWidth:3,tension:.3}]
+},
+options:{
+plugins:{legend:{labels:{color:"white"}}},
+scales:{x:{ticks:{color:"white"}},y:{ticks:{color:"white"}}}
+}
+});
+
+load.innerHTML="";
+}catch{
+load.innerHTML="";
+err.innerHTML="❌ Failed to fetch data.";
+}
+}
+</script>
+
+</body>
+</html>
